@@ -1,8 +1,8 @@
 //
 // lzwjs
 //
-// LZW designed to encode long (above 4MB) javascript Strings for storage in
-// UTF-8 encoded files or strings (such as HTML or XML) in a subset of ascii.
+// LZW designed to encode javascript Strings for storage in UTF-8 encoded files
+// or strings (such as HTML or XML) in a subset of ascii.
 //
 // We use a code formed by 3 base characters. The UTF-8 encoding restrict us to
 // characters below 0x80 which have 85.5% density (0x00-0x7F encoding: 0xxxxxxx
@@ -13,11 +13,11 @@
 // readable, printable, pastable and usable in xml attributes or URLs without
 // any escape.
 //
-// The waste is only 12.5%, 1bit unused per byte, if you take into account the
-// UTF-8 restriction or 25%, 2bit unused per byte if you compare it to raw
-// binary files.
+// The waste is only 14.2% log(64)/log(128), 1bit unused per byte, if you take
+// into account the UTF-8 restriction or 25% log(64)/log(256), 2bit unused per
+// byte if you compare it to raw binary files.
 //
-// Optionally we also support the following bases:
+// It also supports bases above 64:
 //
 // 86  default + "!#%()*+,./:;=?@[]^{|}~" safe extra printable ascii
 // 87  above + " " space char
@@ -33,7 +33,7 @@
 // for base=120, around 50MB for base 128)
 //
 // Benchmarks relative to gzip/bzip2 confirms this. It's on par with gzip/bzip2
-// for once you take into account the base encoding.
+// for once you take into account the base encoding waste log(base)/log(256).
 //
 // Deeply Inspired by https://gist.github.com/revolunet/843889 lzw_encoder.js
 //
@@ -45,56 +45,72 @@ function lzw_encode(s,base=64) {
     if (!s) return s;
     var sym="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!#%()*+,./:;=?@[]^{|}~ $`";
     sym +=String.fromCodePoint(...Array(32).keys()).slice(1)+"\xf7&'>\0<\"\\";
+    var size=base*base*base;
     var d=new Map();
+    var num=256;
+    var logb=Math.log2(base);
     var s=unescape(encodeURIComponent(s)).split("");
     var word=s[0];
-    var num=256;
     var o=[];
-    function out(word,num) {
+    function pack(word) {
         var key=word.length>1 ? d.get(word) : word.charCodeAt(0);
-        o.push(sym[key%base],sym[(key/base|0)%base],sym[(key/base|0)/base|0]);
+        for(var n=(Math.log2(num)/logb|0)+1; n; n--) {
+            o.push(sym[key%base]);
+            key=(key/base|0);
+        }
     }
     for (var i=1; i<s.length; i++) {
         var c=s[i];
         if (d.has(word+c)) {
             word+=c;
         } else {
-            d.set(word+c,num++);
-            out(word,num);
+            d.set(word+c,num);
+            pack(word);
             word=c;
-            if(num==(base*base*base)-1) {
+            if(++num==size-1) {
                 d.clear();
                 num=256;
             }
         }
     }
-    out(word);
+    pack(word);
     return o.join("");
 }
 
 function lzw_decode(s,base=64) {
     var sym="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!#%()*+,./:;=?@[]^{|}~ $`";
     sym +=String.fromCodePoint(...Array(32).keys()).slice(1)+"\xf7&'>\0<\"\\";
+    var size=base*base*base;
     var symd={};
     for(var i=0; i<base; i++){
         symd[sym.charAt(i)]=i;
     }
     var d=new Map();
-    var num=256;
-    var word=String.fromCharCode(symd[s[0]]+(symd[s[1]]*base)+(symd[s[2]]*base*base));
+    var num=257;
+    var logb=Math.log2(base);
+    var logn=8/logb|0;
+    var i=0;
+    function unpack(pos=0) {
+        return symd[s[i++]]+(pos==logn ? 0 : base*unpack(pos+1));
+    }
+    var word=String.fromCharCode(unpack());
     var prev=word;
     var o=[word];
-    for(var i=3; i<s.length; i+=3) {
-        var key=symd[s[i]]+(symd[s[i+1]]*base)+(symd[s[i+2]]*base*base);
+    while(i<s.length) {
+        logn=Math.log2(num++)/logb|0;
+        var key=unpack();
         word=key<256 ? String.fromCharCode(key) : d.has(key) ? d.get(key) : word+word.charAt(0);
         o.push(word);
-        d.set(num++, prev+word.charAt(0));
-        prev=word;
-        //if(num==(1<<18)-1) {
-          if(num==(base*base*base)-1) {
+        if(num==size-1) {
             d.clear();
             num=256;
         }
+        d.set(num-2,prev+word.charAt(0));
+        prev=word;
     }
     return decodeURIComponent(escape(o.join("")));
+}
+
+if(typeof window==='undefined') {
+    Object.assign(exports,{lzw_encode, lzw_decode});
 }
