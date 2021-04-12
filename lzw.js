@@ -21,12 +21,11 @@
 //
 // 86  default + "!#%()*+,./:;=?@[]^{|}~" safe extra printable ascii
 // 87  above + " " space char
-// 89  above + "$`" unsafe for js template string
-// 120 above + [\x01\x1f] non null control chars
-// 121 above + "\x1f" delete char, safe for xml text and attributes
-// 124 above + "&'>" usafe for xml, safe for javascript strings in html
-// 125 above + "\00" null still safe for javascript strings in html
-// 128 above + '<"\\' all ascii
+// 89  above + "$`" unsafe for js ``
+// 119 above + control chars without \0\r\n with \xf7 safe for xml
+// 122 above + "&'>" usafe for xml, unsafe for js ''
+// 123 above + "\00" null, still safe for js "" in html
+// 128 above + '\n\r<"\\' all ascii
 //
 // Long enough strings are needed for the algorithm to be efficient as we need
 // to fill the code size which is base**3, (around 4MB for base64, around 30MB
@@ -44,7 +43,7 @@
 function lzw_encode(s,base=64) {
     if (!s) return s;
     var sym="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!#%()*+,./:;=?@[]^{|}~ $`";
-    sym +=String.fromCodePoint(...Array(32).keys()).slice(1)+"\xf7&'>\0<\"\\";
+    sym +="\1\2\3\4\5\6\7\b\t\v\f\16\17\20\21\22\23\24\25\26\27\30\31\32\33\34\35\36\37\xf7&'>\0\n\r\"<\\";
     var size=base*base*base;
     var d=new Map();
     var num=256;
@@ -79,7 +78,7 @@ function lzw_encode(s,base=64) {
 
 function lzw_decode(s,base=64) {
     var sym="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_!#%()*+,./:;=?@[]^{|}~ $`";
-    sym +=String.fromCodePoint(...Array(32).keys()).slice(1)+"\xf7&'>\0<\"\\";
+    sym +="\1\2\3\4\5\6\7\b\t\v\f\16\17\20\21\22\23\24\25\26\27\30\31\32\33\34\35\36\37\xf7&'>\0\n\r\"<\\";
     var size=base*base*base;
     var symd={};
     for(var i=0; i<base; i++){
